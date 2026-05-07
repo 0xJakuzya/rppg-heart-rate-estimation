@@ -131,6 +131,8 @@ def save_plots(history: list[dict], best_pred: np.ndarray, best_target: np.ndarr
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
+    out_dir.mkdir(parents=True, exist_ok=True)
+
     epochs = [h["epoch"] for h in history]
 
     fig, axes = plt.subplots(1, 3, figsize=(18, 5))
@@ -256,6 +258,12 @@ def run(args=None) -> None:
     else:
         raise ValueError(f"unknown --model {args.model!r}")
 
+    if args.pretrained:
+        checkpoint_path = Path(args.pretrained)
+        state_dict = torch.load(checkpoint_path, map_location=device)
+        model.load_state_dict(state_dict)
+        print(f"loaded pretrained weights: {checkpoint_path}")
+
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs)
 
@@ -313,6 +321,7 @@ def run(args=None) -> None:
         if improved:
             best_mae = val_m["mae"]
             best_pred, best_target = val_pred, val_target
+            out_dir.mkdir(parents=True, exist_ok=True)
             torch.save(model.state_dict(), out_dir / config.CNN_MODEL_PATH)
             marker = "*"
             epochs_without_improvement = 0
@@ -323,6 +332,7 @@ def run(args=None) -> None:
               f"{train_m['mae']:10.2f} {val_m['mae']:9.2f} {val_m['rmse']:10.2f} "
               f"{lr_now:10.2e} {elapsed:6.1f}s")
 
+        out_dir.mkdir(parents=True, exist_ok=True)
         with (out_dir / "history.json").open("w") as f:
             json.dump(history, f, indent=2)
 
@@ -354,6 +364,7 @@ def run(args=None) -> None:
         "model_params": n_params,
         "args": vars(args),
     }
+    out_dir.mkdir(parents=True, exist_ok=True)
     with (out_dir / "summary.json").open("w") as f:
         json.dump(summary, f, indent=2)
 
@@ -377,6 +388,8 @@ def parse_args(args=None) -> argparse.Namespace:
                         help="cap train set to N patients (for fast CPU sanity runs)")
     parser.add_argument("--max-val-patients", type=int, default=None)
     parser.add_argument("--model", choices=["baseline", "physnet"], default="baseline")
+    parser.add_argument("--pretrained", default=None,
+                        help="path to model weights used as the training start point")
     parser.add_argument("--loss", choices=["negpearson", "cnn", "shiftloss"], default="negpearson")
     parser.add_argument("--spectral-alpha", type=float, default=0.1,
                         help="weight of spectral term in CNNLoss (only used when --loss cnn)")
