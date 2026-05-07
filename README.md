@@ -1,4 +1,4 @@
-# rPPG Heart Rate Estimation
+# rPPG Heart Rate Measurement
 
 This project estimates heart rate from a face video without contact sensors.
 It uses remote photoplethysmography (rPPG): a camera records small skin color
@@ -55,8 +55,6 @@ Best training setup:
 | Model parameters | 709649 |
 | Best validation MAE | 4.19 BPM |
 
-![Training validation curves](assets/readme/training_validation_curves.png)
-
 ## Test On New Patients
 
 The external test set has 28 new patients and 896 windows.
@@ -73,12 +71,6 @@ The external test set has 28 new patients and 896 windows.
 Most predictions are close to the reference heart rate, but some patients have
 larger errors. This means the model is useful for a research prototype, but it
 still needs more validation before medical use.
-
-![New patients HR scatter](assets/readme/new_patients_hr_scatter.png)
-
-![New patients error distribution](assets/readme/new_patients_error_distribution.png)
-
-## Per-Patient Analysis
 
 The model quality is different for different people.
 
