@@ -15,7 +15,7 @@ from src.utils import (
     normalize_signal,
 )
 from src.video import VideoCapture
-from src.visualization import bvp_plot, draw_status
+from src.visualization import bvp_plot, draw_landmarks, draw_status
 
 
 def apply_frame_diff(patches: np.ndarray, eps: float = 1e-6) -> np.ndarray:
@@ -87,7 +87,7 @@ def run_tester(args=None) -> None:
                 bvp = np.array([], dtype=np.float32)
                 status, color = "NO FACE", (0, 0, 255)
             else:
-                detector.draw_landmarks(display, landmarks)
+                draw_landmarks(display, landmarks)
                 patches = extract_multi_rois_patches(detector, frame, landmarks)
                 patch_preview = make_patch_preview(patches)
                 patch_buffer.append(patches)

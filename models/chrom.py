@@ -3,6 +3,11 @@ from src.utils import detrend, bandpass_filter
 from src import config
 
 def chrom(rgb: np.ndarray, fs: float) -> np.ndarray:
+    """
+    Метод CHROM для измерения сердечного ритма из видео.
+    Вход: rgb: np.ndarray, fs: float
+    Выход: bvp: np.ndarray
+    """
     win_sec = 1.6
     N = rgb.shape[0]
     l = max(int(win_sec * fs), 2)
@@ -29,7 +34,6 @@ def chrom(rgb: np.ndarray, fs: float) -> np.ndarray:
         return np.zeros(N, dtype=np.float32)
     bvp /= std
     return bvp.astype(np.float32)
-
 
 class CHROM:
     def __init__(self, fps: float):

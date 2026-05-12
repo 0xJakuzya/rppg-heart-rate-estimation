@@ -3,6 +3,11 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 class PhysNet(nn.Module):
+    """
+    Модель PhysNet для измерения сердечного ритма из видео.
+    Вход: [batch, time, roi, 3, h, w]
+    Выход: [batch, time]
+    """
     def __init__(self):
         super().__init__()
 
@@ -61,14 +66,7 @@ class PhysNet(nn.Module):
 
     @staticmethod
     def make_mosaic(x: torch.Tensor) -> torch.Tensor:
-        if x.dim() != 6:
-            raise ValueError(f"make_mosaic expects 6D input [B,T,R,C,H,W], got {tuple(x.shape)}")
         b, t, r, c, h, w = x.shape
-        if r != 8:
-            raise ValueError(f"make_mosaic expects R==8, got R={r}")
-        if c != 3:
-            raise ValueError(f"make_mosaic expects C==3, got C={c}")
-
         x = x.reshape(b, t, 2, 4, c, h, w)
         x = x.permute(0, 1, 4, 2, 5, 3, 6).contiguous()
         x = x.reshape(b, t, c, 2 * h, 4 * w)
@@ -76,28 +74,19 @@ class PhysNet(nn.Module):
         return x
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        if x.dim() != 6:
-            raise ValueError(f"Model expects input shaped [batch, time, roi, 3, h, w], got {tuple(x.shape)}")
-
         target_t = x.shape[1]
-
         v = self.make_mosaic(x)
-
         v = self.stem(v)
         v = self.enc1(v)
         v = self.enc2(v)
         v = self.enc3(v)
         v = self.bottleneck(v)
-
-        v = F.interpolate(
-            v,
+        v = F.interpolate(v,
             size=(target_t, v.shape[-2], v.shape[-1]),
             mode="trilinear",
             align_corners=False,
         )
-
         v = self.decoder(v)
-
         v = F.adaptive_avg_pool3d(v, (target_t, 1, 1))
         v = self.head(v)
         return v.view(v.shape[0], target_t)

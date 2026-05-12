@@ -1,24 +1,15 @@
 import argparse
 import csv
 import json
-import sys
 from collections import defaultdict
 from pathlib import Path
-
 import numpy as np
 import torch
 from torch.utils.data import DataLoader, Subset
 from tqdm import tqdm
-
-ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
-
-from models.baseline import Baseline
 from models.physnet import PhysNet
 from src import config
 from src.dataset import RPPGDataset, discover_window_files, get_patient_id
-
 
 def parse_window_stem(file: str) -> tuple[str, int]:
     stem = Path(file).stem
@@ -29,27 +20,22 @@ def parse_window_stem(file: str) -> tuple[str, int]:
         raise ValueError(f"expected window filename ending with _00000 style frame index: {stem}") from exc
     return video_id, start_frame
 
-
 def reconstruct_video_signal(segments: list[tuple[int, np.ndarray]]) -> np.ndarray:
     if not segments:
         return np.array([], dtype=np.float32)
-
     max_frame = max(start + len(signal) for start, signal in segments)
     summed = np.zeros(max_frame, dtype=np.float64)
     counts = np.zeros(max_frame, dtype=np.float64)
-
     for start, signal in segments:
         end = start + len(signal)
         summed[start:end] += signal
         counts[start:end] += 1.0
-
     covered = counts > 0
     reconstructed = np.zeros_like(summed)
     reconstructed[covered] = summed[covered] / counts[covered]
     return reconstructed[covered].astype(np.float32)
 
-
-def spectral_confidence(signal: np.ndarray, fps: float, eps: float = 1e-12) -> dict[str, float]:
+def spectral_metrics(signal: np.ndarray, fps: float, eps: float = 1e-12) -> dict[str, float]:
     signal = np.asarray(signal, dtype=np.float64)
     if len(signal) < 2:
         return {
@@ -57,9 +43,7 @@ def spectral_confidence(signal: np.ndarray, fps: float, eps: float = 1e-12) -> d
             "peak_ratio": float("nan"),
             "peak_power_fraction": float("nan"),
             "spectral_entropy": float("nan"),
-            "confidence": 0.0,
         }
-
     signal = signal - signal.mean()
     n = 2 ** int(np.ceil(np.log2(len(signal))))
     freqs = np.fft.rfftfreq(n, d=1.0 / fps)
@@ -71,76 +55,25 @@ def spectral_confidence(signal: np.ndarray, fps: float, eps: float = 1e-12) -> d
             "peak_ratio": float("nan"),
             "peak_power_fraction": float("nan"),
             "spectral_entropy": float("nan"),
-            "confidence": 0.0,
         }
-
     band_freqs = freqs[mask]
     band_power = power[mask]
     order = np.argsort(band_power)[::-1]
     top_power = float(band_power[order[0]])
     second_power = float(band_power[order[1]]) if len(order) > 1 else 0.0
     total_power = float(band_power.sum())
-
     probabilities = band_power / (total_power + eps)
     entropy = -float(np.sum(probabilities * np.log(probabilities + eps)))
     if len(probabilities) > 1:
         entropy /= float(np.log(len(probabilities)))
-
     peak_ratio = top_power / (second_power + eps)
     peak_power_fraction = top_power / (total_power + eps)
-    entropy_confidence = 1.0 - entropy
-    ratio_score = float(np.clip((peak_ratio - 1.0) / 1.0, 0.0, 1.0))
-    fraction_score = float(np.clip(peak_power_fraction / 0.35, 0.0, 1.0))
-    confidence = 0.5 * ratio_score + 0.3 * fraction_score + 0.2 * entropy_confidence
-
     return {
         "hr_bpm": float(band_freqs[order[0]] * 60.0),
         "peak_ratio": peak_ratio,
         "peak_power_fraction": peak_power_fraction,
         "spectral_entropy": entropy,
-        "confidence": float(np.clip(confidence, 0.0, 1.0)),
     }
-
-
-def summarize_confidence_thresholds(
-    video_rows: list[dict[str, float | int | str]],
-    thresholds: list[float],
-) -> dict[str, dict[str, float | int]]:
-    summary = {}
-    total = len(video_rows)
-    for threshold in thresholds:
-        kept = [
-            row
-            for row in video_rows
-            if float(row["pred_confidence"]) >= threshold
-        ]
-        key = f"{threshold:.2f}"
-        if not kept:
-            summary[key] = {
-                "n_videos": 0,
-                "coverage": 0.0,
-                "video_hr_mae": float("nan"),
-                "video_hr_rmse": float("nan"),
-                "video_hr_bias": float("nan"),
-                "n_over_5_bpm": 0,
-                "over_5_bpm_rate": float("nan"),
-            }
-            continue
-
-        errors = np.array([float(row["error_bpm"]) for row in kept], dtype=float)
-        abs_errors = np.abs(errors)
-        n_over_5 = int(np.sum(abs_errors > 5.0))
-        summary[key] = {
-            "n_videos": len(kept),
-            "coverage": float(len(kept) / total),
-            "video_hr_mae": float(np.mean(abs_errors)),
-            "video_hr_rmse": float(np.sqrt(np.mean(errors ** 2))),
-            "video_hr_bias": float(np.mean(errors)),
-            "n_over_5_bpm": n_over_5,
-            "over_5_bpm_rate": float(n_over_5 / len(kept)),
-        }
-    return summary
-
 
 def patient_ids_from_dirs(data_dirs: list[str]) -> set[str]:
     patient_ids: set[str] = set()
@@ -148,7 +81,6 @@ def patient_ids_from_dirs(data_dirs: list[str]) -> set[str]:
         for file in discover_window_files(data_dir):
             patient_ids.add(get_patient_id(file))
     return patient_ids
-
 
 def select_patient_files(
     files: list[str],
@@ -182,9 +114,7 @@ def select_patient_files(
 
 
 def load_model(model_name: str, model_path: str, device: torch.device) -> torch.nn.Module:
-    if model_name == "baseline":
-        model = Baseline()
-    elif model_name == "physnet":
+    if model_name == "physnet":
         model = PhysNet()
     else:
         raise ValueError(f"unknown model: {model_name}")
@@ -241,8 +171,8 @@ def run(args=None) -> None:
         for i in range(pred.shape[0]):
             file = selected_files[offset + i]
             video_id, start_frame = parse_window_stem(file)
-            pred_metrics = spectral_confidence(pred[i], fps)
-            true_metrics = spectral_confidence(target[i], fps)
+            pred_metrics = spectral_metrics(pred[i], fps)
+            true_metrics = spectral_metrics(target[i], fps)
             pred_hr = pred_metrics["hr_bpm"]
             true_hr = true_metrics["hr_bpm"]
             error = pred_hr - true_hr
@@ -259,7 +189,6 @@ def run(args=None) -> None:
                 "pred_peak_ratio": pred_metrics["peak_ratio"],
                 "pred_peak_power_fraction": pred_metrics["peak_power_fraction"],
                 "pred_spectral_entropy": pred_metrics["spectral_entropy"],
-                "pred_confidence": pred_metrics["confidence"],
                 "true_peak_ratio": true_metrics["peak_ratio"],
                 "true_peak_power_fraction": true_metrics["peak_power_fraction"],
                 "true_spectral_entropy": true_metrics["spectral_entropy"],
@@ -284,8 +213,8 @@ def run(args=None) -> None:
         segments = video_segments[video_id]
         pred_signal = reconstruct_video_signal(segments["pred"])
         target_signal = reconstruct_video_signal(segments["target"])
-        pred_metrics = spectral_confidence(pred_signal, fps)
-        true_metrics = spectral_confidence(target_signal, fps)
+        pred_metrics = spectral_metrics(pred_signal, fps)
+        true_metrics = spectral_metrics(target_signal, fps)
         pred_hr = pred_metrics["hr_bpm"]
         true_hr = true_metrics["hr_bpm"]
         error = pred_hr - true_hr
@@ -303,11 +232,9 @@ def run(args=None) -> None:
             "pred_peak_ratio": pred_metrics["peak_ratio"],
             "pred_peak_power_fraction": pred_metrics["peak_power_fraction"],
             "pred_spectral_entropy": pred_metrics["spectral_entropy"],
-            "pred_confidence": pred_metrics["confidence"],
             "true_peak_ratio": true_metrics["peak_ratio"],
             "true_peak_power_fraction": true_metrics["peak_power_fraction"],
             "true_spectral_entropy": true_metrics["spectral_entropy"],
-            "window_mean_pred_confidence": float(np.mean([row["pred_confidence"] for row in window_rows])),
             "window_mean_pred_hr_bpm": float(np.mean([row["pred_hr_bpm"] for row in window_rows])),
             "window_mean_true_hr_bpm": float(np.mean([row["true_hr_bpm"] for row in window_rows])),
             "window_mean_abs_error_bpm": float(np.mean([row["abs_error_bpm"] for row in window_rows])),
@@ -359,11 +286,6 @@ def run(args=None) -> None:
         "video_hr_bias": float(np.mean(video_errors_np)),
         "video_median_abs_error": float(np.median(video_abs_errors_np)),
         "video_p90_abs_error": float(np.percentile(video_abs_errors_np, 90)),
-        "video_mean_pred_confidence": float(np.mean([row["pred_confidence"] for row in video_rows])),
-        "video_confidence_thresholds": summarize_confidence_thresholds(
-            video_rows,
-            parsed.confidence_thresholds,
-        ),
         "selected_patients": selected_patients,
         "patient_mae": patient_mae,
         "patient_video_mae": patient_video_mae,
@@ -388,7 +310,7 @@ def parse_args(args=None) -> argparse.Namespace:
     parser.add_argument("--data-dir", required=True)
     parser.add_argument("--model-path", required=True)
     parser.add_argument("--output-dir", required=True)
-    parser.add_argument("--model", choices=["baseline", "physnet"], default="physnet")
+    parser.add_argument("--model", choices=["physnet"], default="physnet")
     parser.add_argument("--batch-size", type=int, default=4)
     parser.add_argument("--num-workers", type=int, default=0)
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
@@ -396,13 +318,6 @@ def parse_args(args=None) -> argparse.Namespace:
     parser.add_argument("--start-after-patient", default=None)
     parser.add_argument("--exclude-data-dir", action="append", default=[])
     parser.add_argument("--use-frame-diff", action="store_true")
-    parser.add_argument(
-        "--confidence-thresholds",
-        type=float,
-        nargs="*",
-        default=[0.45, 0.55, 0.65, 0.75],
-        help="video confidence thresholds to summarize in summary.json",
-    )
     return parser.parse_args(args)
 
 

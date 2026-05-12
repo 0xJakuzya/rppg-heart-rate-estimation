@@ -4,6 +4,11 @@ from src.utils import detrend, bandpass_filter
 from src import config
 
 def pos(rgb, fs):
+    """
+    Метод POS-Wang для измерения сердечного ритма из видео.
+    Вход: rgb: np.ndarray, fs: float
+    Выход: bvp: np.ndarray
+    """
     win_sec = 1.6
     N = rgb.shape[0]
     H = np.zeros(N)

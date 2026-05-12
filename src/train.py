@@ -10,9 +10,8 @@ import torch
 import torch.nn as nn
 from tqdm import tqdm
 
-from models.baseline import Baseline
 from models.physnet import PhysNet
-from models.loss import CNNLoss, ShiftLoss
+from models.loss import ShiftLoss
 from src import config
 from src.dataset import (
     RPPGDataset,
@@ -94,7 +93,6 @@ def train_one_epoch(model, loader, optimizer, criterion, device, fps, epoch, tot
     metrics = hr_metrics(np.concatenate(preds_all), np.concatenate(targets_all), fps)
     metrics["loss"] = total_loss / max(total_samples, 1)
     return metrics
-
 
 @torch.no_grad()
 def eval_one_epoch(model, loader, criterion, device, fps, epoch, total_epochs):
@@ -251,9 +249,7 @@ def run(args=None) -> None:
     print(f"train batches: {len(train_loader)} | val batches: {len(val_loader)}")
 
     print(f"\n[4/5] Build model")
-    if args.model == "baseline":
-        model = Baseline().to(device)
-    elif args.model == "physnet":
+    if args.model == "physnet":
         model = PhysNet().to(device)
     else:
         raise ValueError(f"unknown --model {args.model!r}")
@@ -269,8 +265,6 @@ def run(args=None) -> None:
 
     if args.loss == "negpearson":
         criterion = NegPearson()
-    elif args.loss == "cnn":
-        criterion = CNNLoss(spectral_alpha=args.spectral_alpha)
     elif args.loss == "shiftloss":
         criterion = ShiftLoss(max_shift_sec=args.max_shift_sec, fps=fps)
     else:
@@ -374,7 +368,7 @@ def run(args=None) -> None:
 
 
 def parse_args(args=None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Train Baseline rPPG model on patch windows.")
+    parser = argparse.ArgumentParser(description="Train PhysNet rPPG model on patch windows.")
     parser.add_argument("--data-dir", default="data/mcd_rppg_windows")
     parser.add_argument("--output", default="results")
     parser.add_argument("--epochs", type=int, default=config.CNN_EPOCHS)
@@ -387,13 +381,11 @@ def parse_args(args=None) -> argparse.Namespace:
     parser.add_argument("--max-train-patients", type=int, default=None,
                         help="cap train set to N patients (for fast CPU sanity runs)")
     parser.add_argument("--max-val-patients", type=int, default=None)
-    parser.add_argument("--model", choices=["baseline", "physnet"], default="baseline")
+    parser.add_argument("--model", choices=["physnet"], default="physnet")
     parser.add_argument("--pretrained", default=None,
                         help="path to model weights used as the training start point")
-    parser.add_argument("--loss", choices=["negpearson", "cnn", "shiftloss"], default="negpearson")
-    parser.add_argument("--spectral-alpha", type=float, default=0.1,
-                        help="weight of spectral term in CNNLoss (only used when --loss cnn)")
-    parser.add_argument("--max-shift-sec", type=float, default=0.33,
+    parser.add_argument("--loss", choices=["negpearson", "shiftloss"], default="negpearson")
+    parser.add_argument("--max-shift-sec", type=float, default=config.SHIFT_LOSS_MAX_SHIFT_SEC,
                         help="max temporal shift in seconds for ShiftLoss (only used when --loss shiftloss)")
     parser.add_argument("--use-frame-diff", action="store_true",
                         help="apply normalized frame difference preprocessing (Ho et al.)")

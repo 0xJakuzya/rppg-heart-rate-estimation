@@ -4,6 +4,7 @@ import scipy.sparse
 import numpy as np
 import torch
 import cv2
+from models.physnet import PhysNet
 from src import config
 
 def load_ppg_sync(path: str) -> tuple[np.ndarray, float]:
@@ -22,9 +23,7 @@ def resample_ppg(ppg: np.ndarray, ppg_fps: float,
     return np.concatenate([resampled, pad]).astype(np.float32)
 
 def load_physnet(device: torch.device):
-    from models.baseline import Baseline
-
-    model = Baseline().to(device)
+    model = PhysNet()
     model.load_state_dict(torch.load(config.CNN_MODEL_PATH, map_location=device))
     model.eval()
     return model

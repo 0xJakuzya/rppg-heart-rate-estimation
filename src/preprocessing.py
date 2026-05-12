@@ -51,7 +51,6 @@ def fill_missing_patches(patches: np.ndarray) -> np.ndarray | None:
         filled[:, channel] = np.interp(idx, idx[valid], flat[valid, channel])
     return filled.reshape(patches.shape).astype(np.float32)
 
-
 def extract_patch_sequence(
     video_path: Path,
     detector: FaceDetector,

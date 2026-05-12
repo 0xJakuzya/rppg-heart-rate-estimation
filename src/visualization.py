@@ -2,6 +2,19 @@ import cv2
 import numpy as np
 from src import config
 
+
+def draw_landmarks(frame: np.ndarray, landmarks: list[tuple[int, int]] | None) -> np.ndarray:
+    """отрисовка точек лица на кадре."""
+
+    if landmarks is None:
+        return frame
+
+    for x, y in landmarks:
+        cv2.circle(frame, (x, y), 1, (0, 255, 0), -1)
+
+    return frame
+
+
 def draw_roi(frame: np.ndarray, roi_mask: np.ndarray, color: tuple[int, int, int], alpha: float = 0.3,) -> np.ndarray:
     overlay = frame.copy()
     colored = np.zeros_like(frame)
